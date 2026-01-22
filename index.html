@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#F9F7F2" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="脑安健康" />
+    
+    <title>脑安健康 - 中老年健康助手</title>
+    
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f9e0.png" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Noto Sans SC"', 'sans-serif'],
+            },
+            colors: {
+              warm: {
+                50: '#F9F7F2', // Background (Warm Rice White)
+                100: '#F0EBE0', // Card Background
+                200: '#E6DCCF', // Borders
+                500: '#8C857B', // Muted Text
+                800: '#5C554B', // Secondary Text
+                900: '#4A4238', // Primary Text
+              },
+              // Morandi Module Colors
+              face: {
+                DEFAULT: '#739E82', // Sage Green
+                light: '#E3ECE6',
+                dark: '#4A6B56'
+              },
+              voice: {
+                DEFAULT: '#6C8BAB', // Dusty Blue
+                light: '#E1E8F0',
+                dark: '#455E75'
+              },
+              touch: {
+                DEFAULT: '#D68C68', // Terracotta Orange
+                light: '#F7E8E1',
+                dark: '#8F5438'
+              },
+              status: {
+                ok: '#739E82',
+                warn: '#E0C05E', // Mustard
+                danger: '#C96A66', // Muted Red
+              }
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #F9F7F2;
+        color: #4A4238;
+        overscroll-behavior: none;
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #F0EBE0;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #D6D6D6;
+        border-radius: 3px;
+      }
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react-webcam": "https://esm.sh/react-webcam@^7.2.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      // Use relative path ./sw.js to avoid origin mismatch errors in preview environments
+      navigator.serviceWorker.register('./sw.js').catch(err => {
+        console.debug('ServiceWorker registration failed (this is expected in some preview environments):', err);
+      });
+    });
+  }
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

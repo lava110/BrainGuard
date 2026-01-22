@@ -1,0 +1,8 @@
+{
+  "name": "Copy of BrainGuard (脑安)v5.0人脸分离版本",
+  "description": "Neuro-Weather Station: A multimodal AI agent for stroke pre-detection using vision, voice, and touch monitoring.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
