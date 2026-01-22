@@ -27,6 +27,8 @@ const playTone = (freq: number) => {
 const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    // Use Ref for synchronous state tracking in high-frequency event loops
+    const isDrawingRef = useRef(false); 
     const [progress, setProgress] = useState(0);
     const [guideMsg, setGuideMsg] = useState("请按住中心圆点开始");
     
@@ -153,12 +155,14 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
     const getCoordinates = (e: React.TouchEvent | React.MouseEvent, rect: DOMRect) => {
         let clientX, clientY;
-        if ('touches' in e) {
+        if ('touches' in e && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
-        } else {
+        } else if ('clientX' in e) {
             clientX = (e as React.MouseEvent).clientX;
             clientY = (e as React.MouseEvent).clientY;
+        } else {
+            return { x: 0, y: 0 };
         }
         return {
             x: clientX - rect.left,
@@ -167,7 +171,9 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     };
 
     const handleStart = (e: React.TouchEvent | React.MouseEvent) => {
-        e.preventDefault(); 
+        // Prevent default to avoid scrolling or synthesized mouse events on mobile
+        if (e.cancelable) e.preventDefault(); 
+
         const canvas = canvasRef.current;
         if (!canvas) return;
         
@@ -184,7 +190,8 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             return;
         }
 
-        setIsDrawing(true);
+        isDrawingRef.current = true; // Sync update
+        setIsDrawing(true); // UI update
         setGuideMsg("保持按住，画出来...");
         pointsRef.current = [{x, y}];
         errorsRef.current = [];
@@ -200,8 +207,10 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     };
 
     const handleMove = (e: React.TouchEvent | React.MouseEvent) => {
-        if (!isDrawing) return;
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
+        
+        // Critical: Check Ref instead of State to avoid closure staleness in event loops
+        if (!isDrawingRef.current) return;
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -223,12 +232,17 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         }
 
         if (distFromCenter >= MAX_RADIUS - 10) {
-            finishTest();
+            // FIX: Prevent immediate finish on glitch or start
+            // Require a minimum number of points to prevent accidental single-tap finishes
+            if (pointsRef.current.length > 20) {
+                finishTest();
+            }
         }
     };
 
     const handleEnd = () => {
-        if (isDrawing) {
+        if (isDrawingRef.current) {
+            isDrawingRef.current = false; // Sync
             setIsDrawing(false);
             setGuideMsg("请不要中途抬手，重新从中心开始。");
             pointsRef.current = [];
@@ -250,6 +264,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     };
 
     const finishTest = () => {
+        isDrawingRef.current = false;
         setIsDrawing(false);
         playTone(880);
         
@@ -282,7 +297,8 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             <div className="relative select-none touch-none">
                 <canvas 
                     ref={canvasRef}
-                    className="w-[340px] h-[340px] bg-white rounded-full shadow-lg border-4 border-warm-100 touch-none cursor-crosshair"
+                    className="w-[340px] h-[340px] bg-white rounded-full shadow-lg border-4 border-warm-100 cursor-crosshair"
+                    style={{ touchAction: 'none' }} 
                     onTouchStart={handleStart}
                     onTouchMove={handleMove}
                     onTouchEnd={handleEnd}
