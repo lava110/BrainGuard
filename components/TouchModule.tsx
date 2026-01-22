@@ -32,12 +32,12 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     const [progress, setProgress] = useState(0);
     const [guideMsg, setGuideMsg] = useState("请按住中心圆点开始");
     
-    // Config
-    const CENTER = { x: 0, y: 0 }; // Will be set on mount
-    const MAX_RADIUS = 140;
-    const START_ZONE_RADIUS = 35; // Must start within this radius
+    // Dynamic Config Refs (Calculated on mount/resize)
+    const centerRef = useRef({ x: 0, y: 0 });
+    const maxRadiusRef = useRef(0);
+    const bCoeffRef = useRef(0);
+    const startZoneRadiusRef = useRef(0);
     const LOOPS = 3;
-    const B_COEFF = MAX_RADIUS / (2 * Math.PI * LOOPS);
 
     const pointsRef = useRef<{x: number, y: number}[]>([]);
     const errorsRef = useRef<number[]>([]);
@@ -46,13 +46,21 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const t = setTimeout(() => {
             speak("请用食指按住中心圆点，不抬手，沿着线画到最外面。", true);
         }, 500);
+        
+        // Initial setup
         initCanvas();
         
-        // Handle resize
-        window.addEventListener('resize', initCanvas);
+        // Handle resize with debounce to prevent flicker
+        let resizeTimer: NodeJS.Timeout;
+        const handleResize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(initCanvas, 100);
+        };
+
+        window.addEventListener('resize', handleResize);
         return () => {
             clearTimeout(t);
-            window.removeEventListener('resize', initCanvas);
+            window.removeEventListener('resize', handleResize);
         };
     }, []);
 
@@ -60,18 +68,34 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         
+        // Get the computed size of the container (which is responsive)
+        const rect = canvas.getBoundingClientRect();
+        
         // High DPI setup
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+        
+        // Set internal resolution to match display size * DPR
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+        
+        // Scale context so we can draw using CSS logic coordinates
         ctx.scale(dpr, dpr);
         
-        CENTER.x = rect.width / 2;
-        CENTER.y = rect.height / 2;
+        // Calculate dynamic parameters
+        const size = Math.min(rect.width, rect.height);
+        centerRef.current = { x: rect.width / 2, y: rect.height / 2 };
+        
+        // Radius is half size minus padding (20px)
+        maxRadiusRef.current = (size / 2) - 20; 
+        
+        // Start zone is relative to size (approx 35px on standard phone)
+        startZoneRadiusRef.current = Math.max(25, size * 0.1); 
+        
+        // Spiral Coeff: r = b * theta. MaxR = b * (2 * PI * LOOPS)
+        bCoeffRef.current = maxRadiusRef.current / (2 * Math.PI * LOOPS);
 
         drawBaseSpiral(ctx, rect.width, rect.height, false);
     };
@@ -79,17 +103,22 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     const drawBaseSpiral = (ctx: CanvasRenderingContext2D, w: number, h: number, isActive: boolean) => {
         ctx.clearRect(0, 0, w, h);
         
+        const center = centerRef.current;
+        const maxR = maxRadiusRef.current;
+        const b = bCoeffRef.current;
+
         // 1. Draw Ideal Spiral (Guide)
         ctx.beginPath();
         ctx.strokeStyle = '#E6DCCF'; // warm-200
-        ctx.lineWidth = 20; // Thick guide
+        ctx.lineWidth = w * 0.06; // Responsive line width (approx 20px on 340px)
         ctx.lineCap = 'round';
 
         // Draw from center out
-        for (let theta = 0; theta <= 2 * Math.PI * LOOPS; theta += 0.05) {
-            const r = B_COEFF * theta;
-            const x = CENTER.x + r * Math.cos(theta);
-            const y = CENTER.y + r * Math.sin(theta);
+        const step = 0.05;
+        for (let theta = 0; theta <= 2 * Math.PI * LOOPS; theta += step) {
+            const r = b * theta;
+            const x = center.x + r * Math.cos(theta);
+            const y = center.y + r * Math.sin(theta);
             if (theta === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }
@@ -97,10 +126,10 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
         // 2. Start Point Indicator (Center)
         ctx.beginPath();
-        // If active, solid color; if idle, pulsating effect in CSS handled via re-renders? 
-        // We'll stick to simple canvas drawing here.
         ctx.fillStyle = isActive ? '#D68C68' : '#D68C68'; 
-        ctx.arc(CENTER.x, CENTER.y, 16, 0, Math.PI * 2);
+        // Responsive dot size
+        const dotSize = Math.max(12, w * 0.04);
+        ctx.arc(center.x, center.y, dotSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Start Zone Ring (Visual Hint)
@@ -109,7 +138,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             ctx.strokeStyle = '#D68C68';
             ctx.lineWidth = 2;
             ctx.setLineDash([5, 5]);
-            ctx.arc(CENTER.x, CENTER.y, START_ZONE_RADIUS, 0, Math.PI * 2);
+            ctx.arc(center.x, center.y, startZoneRadiusRef.current, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
         }
@@ -118,7 +147,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         if (pointsRef.current.length > 0) {
             ctx.beginPath();
             ctx.strokeStyle = '#D68C68'; // touch color
-            ctx.lineWidth = 8;
+            ctx.lineWidth = w * 0.025; // Responsive stroke
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
             
@@ -132,8 +161,11 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
     // ALGORITHM: Calculate Radial Deviation
     const calculateError = (x: number, y: number) => {
-        const dx = x - CENTER.x;
-        const dy = y - CENTER.y;
+        const center = centerRef.current;
+        const b = bCoeffRef.current;
+        
+        const dx = x - center.x;
+        const dy = y - center.y;
         const rUser = Math.sqrt(dx * dx + dy * dy);
         let thetaUser = Math.atan2(dy, dx); 
         
@@ -145,7 +177,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             const angleCandidate = thetaUser + (n * 2 * Math.PI);
             if (angleCandidate > 2 * Math.PI * LOOPS + 0.5) continue;
 
-            const rIdeal = B_COEFF * angleCandidate;
+            const rIdeal = b * angleCandidate;
             const diff = Math.abs(rUser - rIdeal);
             
             if (diff < minDiff) minDiff = diff;
@@ -179,13 +211,13 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         
         const rect = canvas.getBoundingClientRect();
         const { x, y } = getCoordinates(e, rect);
+        const center = centerRef.current;
 
         // FIX: Enforce Start Zone
-        const distFromCenter = Math.sqrt(Math.pow(x - CENTER.x, 2) + Math.pow(y - CENTER.y, 2));
+        const distFromCenter = Math.sqrt(Math.pow(x - center.x, 2) + Math.pow(y - center.y, 2));
         
-        if (distFromCenter > START_ZONE_RADIUS) {
+        if (distFromCenter > startZoneRadiusRef.current) {
             setGuideMsg("请从中心圆点开始！");
-            // Optional: Haptic feedback if available
             if (navigator.vibrate) navigator.vibrate(200);
             return;
         }
@@ -209,19 +241,20 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     const handleMove = (e: React.TouchEvent | React.MouseEvent) => {
         if (e.cancelable) e.preventDefault();
         
-        // Critical: Check Ref instead of State to avoid closure staleness in event loops
         if (!isDrawingRef.current) return;
 
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const { x, y } = getCoordinates(e, rect);
+        const center = centerRef.current;
+        const maxR = maxRadiusRef.current;
 
         pointsRef.current.push({ x, y });
         errorsRef.current.push(calculateError(x, y));
 
-        const distFromCenter = Math.sqrt(Math.pow(x - CENTER.x, 2) + Math.pow(y - CENTER.y, 2));
-        const currentProg = Math.min(100, (distFromCenter / MAX_RADIUS) * 100);
+        const distFromCenter = Math.sqrt(Math.pow(x - center.x, 2) + Math.pow(y - center.y, 2));
+        const currentProg = Math.min(100, (distFromCenter / maxR) * 100);
         setProgress(currentProg);
 
         const ctx = canvas.getContext('2d');
@@ -231,9 +264,8 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             drawBaseSpiral(ctx, rect.width, rect.height, true);
         }
 
-        if (distFromCenter >= MAX_RADIUS - 10) {
-            // FIX: Prevent immediate finish on glitch or start
-            // Require a minimum number of points to prevent accidental single-tap finishes
+        // Finish condition: Reached near edge (minus a small buffer)
+        if (distFromCenter >= maxR - 5) {
             if (pointsRef.current.length > 20) {
                 finishTest();
             }
@@ -274,11 +306,15 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const sumSquares = errorsRef.current.reduce((a, b) => a + (b * b), 0);
         const rmse = Math.sqrt(sumSquares / errorsRef.current.length);
         
-        // Scoring Logic
-        // RMSE < 15 is excellent. RMSE > 50 is bad.
-        let score = Math.max(0, 100 - (rmse * 2));
+        // Scoring Logic based on dynamic resolution
+        // Normalize RMSE based on Max Radius to make scoring screen-size independent
+        // E.g., Deviation of 5px on a 100px radius is worse than 5px on 500px radius? 
+        // Actually, pure pixel deviation is usually fine for finger tremor, but let's normalize slightly.
+        const normalizedRmse = (rmse / maxRadiusRef.current) * 100; // Percentage error
         
-        // Speed/Data Penalty: If points are too few, they moved inhumanly fast (or cheated/glitched)
+        // Baseline: < 5% error is great. > 15% is bad.
+        let score = Math.max(0, 100 - (normalizedRmse * 4)); 
+        
         if (pointsRef.current.length < 30) score = Math.min(score, 40);
 
         onFinish(Math.floor(score));
@@ -294,19 +330,22 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
                 </div>
             </div>
 
-            <div className="relative select-none touch-none">
-                <canvas 
-                    ref={canvasRef}
-                    className="w-[340px] h-[340px] bg-white rounded-full shadow-lg border-4 border-warm-100 cursor-crosshair"
-                    style={{ touchAction: 'none' }} 
-                    onTouchStart={handleStart}
-                    onTouchMove={handleMove}
-                    onTouchEnd={handleEnd}
-                    onMouseDown={handleStart}
-                    onMouseMove={handleMove}
-                    onMouseUp={handleEnd}
-                    onMouseLeave={handleEnd}
-                />
+            <div className="relative select-none touch-none w-full flex justify-center">
+                {/* Responsive Container: 85% of Viewport Width, Square Aspect Ratio, Max Limit */}
+                <div className="relative w-[85vw] max-w-[360px] aspect-square">
+                    <canvas 
+                        ref={canvasRef}
+                        className="w-full h-full bg-white rounded-full shadow-lg border-4 border-warm-100 cursor-crosshair"
+                        style={{ touchAction: 'none' }} 
+                        onTouchStart={handleStart}
+                        onTouchMove={handleMove}
+                        onTouchEnd={handleEnd}
+                        onMouseDown={handleStart}
+                        onMouseMove={handleMove}
+                        onMouseUp={handleEnd}
+                        onMouseLeave={handleEnd}
+                    />
+                </div>
             </div>
             
             <p className="mt-6 text-xs text-warm-400 max-w-xs text-center">
