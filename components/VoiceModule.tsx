@@ -77,7 +77,7 @@ const VowelTest = ({ onFinish }: { onFinish: (score: number, issues: string[]) =
     const analyserRef = useRef<AnalyserNode | null>(null);
     const requestRef = useRef<number>(0);
     const streamRef = useRef<MediaStream | null>(null);
-    const listeningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const listeningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     
     const pitchDataRef = useRef<number[]>([]);
     const ampDataRef = useRef<number[]>([]);

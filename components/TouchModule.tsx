@@ -32,7 +32,8 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     const [guideMsg, setGuideMsg] = useState("请按住中心圆点开始");
     
     // Dynamic Config Refs (Calculated on mount/resize)
-    const canvasSizeRef = useRef(300);
+    // logicalSize is the CSS pixel size we INTEND to have
+    const logicalSizeRef = useRef(300); 
     const centerRef = useRef({ x: 150, y: 150 });
     const maxRadiusRef = useRef(130);
     const bCoeffRef = useRef(0);
@@ -51,7 +52,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         initCanvas();
         
         // Handle resize with debounce
-        let resizeTimer: NodeJS.Timeout;
+        let resizeTimer: ReturnType<typeof setTimeout>;
         const handleResize = () => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(initCanvas, 100);
@@ -68,20 +69,19 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         
-        // 1. Calculate robust square size based on viewport
-        // Use 90% of width, but cap at 360px.
+        // 1. Calculate size based on viewport
         const padding = 32;
         const w = window.innerWidth - padding;
-        const h = window.innerHeight * 0.6; // Don't take up too much height
+        const h = window.innerHeight * 0.65; 
         const size = Math.floor(Math.min(w, h, 360));
         
-        canvasSizeRef.current = size;
+        logicalSizeRef.current = size;
 
-        // 2. Set DOM dimensions (Style) - Critical for preventing distortion
+        // 2. Set DOM dimensions (Style)
         canvas.style.width = `${size}px`;
         canvas.style.height = `${size}px`;
 
-        // 3. Set Bitmap dimensions (Attribute) - Critical for resolution
+        // 3. Set Bitmap dimensions (Attribute) with DPR
         const dpr = window.devicePixelRatio || 1;
         canvas.width = size * dpr;
         canvas.height = size * dpr;
@@ -89,35 +89,33 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        // 4. Scale context
-        ctx.scale(dpr, dpr);
+        // 4. Set Scale (CRITICAL FIX: Use setTransform to avoid accumulation)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         
         // 5. Update Algorithm Params
         centerRef.current = { x: size / 2, y: size / 2 };
-        // Leave 5px padding from edge
-        maxRadiusRef.current = (size / 2) - 5; 
-        startZoneRadiusRef.current = Math.max(30, size * 0.12); // Slightly larger start zone for easier touch
+        maxRadiusRef.current = (size / 2) - 10; 
+        startZoneRadiusRef.current = Math.max(30, size * 0.12);
         
-        // Spiral Coeff: r = b * theta. MaxR = b * (2 * PI * LOOPS)
         bCoeffRef.current = maxRadiusRef.current / (2 * Math.PI * LOOPS);
 
         drawBaseSpiral(ctx, false);
     };
 
     const drawBaseSpiral = (ctx: CanvasRenderingContext2D, isActive: boolean) => {
-        const size = canvasSizeRef.current;
+        const size = logicalSizeRef.current;
         const center = centerRef.current;
         const b = bCoeffRef.current;
 
+        // Clear using logical size (transform handles dpr)
         ctx.clearRect(0, 0, size, size);
         
         // 1. Draw Ideal Spiral (Guide)
         ctx.beginPath();
         ctx.strokeStyle = '#E6DCCF'; // warm-200
-        ctx.lineWidth = size * 0.08; // Thicker guide
+        ctx.lineWidth = size * 0.06; // Slightly thinner for cleaner look
         ctx.lineCap = 'round';
 
-        // Draw from center out
         const step = 0.05;
         for (let theta = 0; theta <= 2 * Math.PI * LOOPS; theta += step) {
             const r = b * theta;
@@ -130,7 +128,6 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
         // 2. Start Point Indicator (Center)
         ctx.beginPath();
-        // Visual feedback: Green if ready/active, Orange if idle
         ctx.fillStyle = isActive ? '#739E82' : '#D68C68'; 
         const dotSize = Math.max(16, size * 0.06);
         ctx.arc(center.x, center.y, dotSize, 0, Math.PI * 2);
@@ -145,14 +142,12 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             ctx.arc(center.x, center.y, startZoneRadiusRef.current, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
-            
-            // Pulse animation text effect handled in React state
         }
 
         // 3. Draw User Path
         if (pointsRef.current.length > 0) {
             ctx.beginPath();
-            ctx.strokeStyle = '#D68C68'; // touch color
+            ctx.strokeStyle = '#D68C68';
             ctx.lineWidth = size * 0.035; 
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
@@ -192,26 +187,29 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
     const getCoordinates = (e: React.TouchEvent | React.MouseEvent, rect: DOMRect) => {
         let clientX, clientY;
-        // Handle Touch
+        
         if ('touches' in e && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
-        } 
-        // Handle Mouse
-        else if ('clientX' in e) {
+        } else if ('clientX' in e) {
             clientX = (e as React.MouseEvent).clientX;
             clientY = (e as React.MouseEvent).clientY;
         } else {
             return { x: 0, y: 0 };
         }
+
+        // CRITICAL FIX: Handle coordinate scaling if CSS size != Logical Size
+        // If the canvas is shrunk by flexbox, rect.width will be smaller than logicalSizeRef.current
+        const scaleX = logicalSizeRef.current / rect.width;
+        const scaleY = logicalSizeRef.current / rect.height;
+
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     };
 
     const handleStart = (e: React.TouchEvent | React.MouseEvent) => {
-        // Critical for mobile: prevent scrolling while drawing
         if (e.cancelable && e.type === 'touchstart') e.preventDefault(); 
 
         const canvas = canvasRef.current;
@@ -246,7 +244,6 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
     };
 
     const handleMove = (e: React.TouchEvent | React.MouseEvent) => {
-        // Critical: prevent scroll
         if (e.cancelable && e.type === 'touchmove') e.preventDefault();
         
         if (!isDrawingRef.current) return;
@@ -263,7 +260,6 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
 
         const distFromCenter = Math.sqrt(Math.pow(x - center.x, 2) + Math.pow(y - center.y, 2));
         
-        // Redraw
         const ctx = canvas.getContext('2d');
         if (ctx) {
             const dpr = window.devicePixelRatio || 1;
@@ -271,17 +267,14 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
             drawBaseSpiral(ctx, true);
         }
 
-        // Finish condition: Reached near edge
-        // Added buffer: Must be close to maxR (within 10px) OR actually outside it
         if (distFromCenter >= maxR - 10) {
-            // Anti-Glitch: Must have drawn enough points (e.g. ~1s of drawing)
             if (pointsRef.current.length > 25) {
                 finishTest();
             }
         }
     };
 
-    const handleEnd = (e: React.TouchEvent | React.MouseEvent) => {
+    const handleEnd = () => {
         if (isDrawingRef.current) {
             isDrawingRef.current = false;
             setIsDrawing(false);
@@ -313,7 +306,7 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
         const normalizedRmse = (rmse / maxRadiusRef.current) * 100;
         
         let score = Math.max(0, 100 - (normalizedRmse * 4)); 
-        if (pointsRef.current.length < 30) score = Math.min(score, 40); // Too fast penalty
+        if (pointsRef.current.length < 30) score = Math.min(score, 40); 
 
         onFinish(Math.floor(score));
     };
@@ -328,11 +321,10 @@ const SpiralTest = ({ onFinish }: { onFinish: (score: number) => void }) => {
                 </div>
             </div>
 
-            <div className="relative select-none w-full flex justify-center items-center grow-0">
+            <div className="relative select-none w-full flex justify-center items-center grow-0 shrink-0">
                 <canvas 
                     ref={canvasRef}
-                    className="bg-white rounded-full shadow-lg border-4 border-warm-100 cursor-crosshair touch-none"
-                    // Inline touch-action is critical for mobile
+                    className="bg-white rounded-full shadow-lg border-4 border-warm-100 cursor-crosshair touch-none shrink-0"
                     style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }} 
                     onTouchStart={handleStart}
                     onTouchMove={handleMove}
@@ -364,7 +356,7 @@ const StabilityTest = ({ onFinish }: { onFinish: (score: number, issues: string[
     const accData = useRef<number[]>([]);
     
     useEffect(() => {
-        let timer: NodeJS.Timeout;
+        let timer: ReturnType<typeof setTimeout>;
 
         if (status === 'PREP') {
             if (countdown > 0) {
